@@ -1,45 +1,7 @@
 import os
-import ast
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-
-class ComplexityVisitor(ast.NodeVisitor):
-    def __init__(self):
-        self.max_depth = 0
-        self.current_depth = 0
-        self.has_recursion = False
-
-    def visit_FunctionDef(self, node):
-        func_name = node.name
-        
-        # 함수 바디 안에서 자기 자신을 호출(Call)하는지 검사
-        for child in ast.walk(node):
-            if isinstance(child, ast.Call) and isinstance(child.func, ast.Name):
-                if child.func.id == func_name:
-                    self.has_recursion = True
-                    break
-        
-        # 내부 구조(루프 등)도 계속 방문
-        self.generic_visit(node)
-
-    def visit_For(self, node):
-        self.current_depth += 1
-        self.max_depth = max(self.max_depth, self.current_depth)
-        self.generic_visit(node)
-        self.current_depth -= 1
-
-    def visit_While(self, node):
-        self.current_depth += 1
-        self.max_depth = max(self.max_depth, self.current_depth)
-        self.generic_visit(node)
-        self.current_depth -= 1
-        
-    def visit_AsyncFor(self, node):
-        self.current_depth += 1
-        self.max_depth = max(self.max_depth, self.current_depth)
-        self.generic_visit(node)
-        self.current_depth -= 1
-
+from analyzer import analyze_code
 
 class ComplexityAnalyzerApp:
     def __init__(self, root):
@@ -110,34 +72,18 @@ class ComplexityAnalyzerApp:
         if not self.selected_file_path:
             return
             
-        try:
-            with open(self.selected_file_path, 'r', encoding='utf-8') as f:
-                source = f.read()
-        except Exception as e:
-            messagebox.showerror("오류", f"파일을 읽는 도중 오류가 발생했습니다:\n{e}")
-            return
-
-        try:
-            tree = ast.parse(source)
-        except SyntaxError as e:
-            messagebox.showerror("구문 오류", f"선택한 파일에 파이썬 문법 오류(Syntax Error)가 있습니다:\n{e}")
-            return
-
-        visitor = ComplexityVisitor()
-        visitor.visit(tree)
+        # 별도 모듈로 분리된 분석 로직 실행
+        result = analyze_code(self.selected_file_path)
         
-        depth = visitor.max_depth
-        has_recursion = visitor.has_recursion
-        
-        # 복잡도 판별 로직 추가
-        if has_recursion:
-            complexity = "O(2^n) (재귀 호출)"
-        elif depth == 0:
-            complexity = "O(1)"
-        elif depth == 1:
-            complexity = "O(n)"
-        else:
-            complexity = f"O(n^{depth})"
+        # 에러 핸들링
+        if "error" in result:
+            title = "구문 오류" if result.get("type") == "SyntaxError" else "오류"
+            messagebox.showerror(title, result["error"])
+            return
+            
+        depth = result.get("depth", 0)
+        has_recursion = result.get("has_recursion", False)
+        complexity = result.get("complexity", "O(1)")
             
         result_text = f"루프 중첩 깊이: {depth}\n재귀 스택 감지: {'예' if has_recursion else '아니오'}\n\n⏱ 분석된 복잡도: {complexity}"
         self.result_label.config(text=result_text)
