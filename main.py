@@ -1,6 +1,8 @@
 import os
 import ast
 import sys
+import tkinter as tk
+from tkinter import filedialog
 
 
 class LoopDepthVisitor(ast.NodeVisitor):
@@ -57,25 +59,25 @@ tmp/
 
 
 def select_python_file():
-    """2. 파이썬 파일 선택"""
-    py_files = [f for f in os.listdir('.') if f.endswith('.py') and os.path.isfile(f)]
-    if not py_files:
-        print("[오류] 분석할 파이썬(.py) 파일이 현재 디렉토리에 없습니다.")
-        sys.exit(1)
+    """2. GUI로 파이썬 파일 선택"""
+    print("[안내] GUI 창에서 분석할 파이썬(.py) 파일을 선택해주세요...")
+    root = tk.Tk()
+    root.withdraw() # 메인 윈도우 숨기기
+    
+    # macOS에서 창이 배경으로 숨는 현상 방지
+    root.call('wm', 'attributes', '.', '-topmost', True)
+    
+    file_path = filedialog.askopenfilename(
+        title="분석할 파이썬 파일 선택",
+        filetypes=[("Python Files", "*.py"), ("All Files", "*.*")],
+        initialdir=os.getcwd()
+    )
+    
+    if not file_path:
+        print("[취소] 파일 선택이 취소되어 프로그램을 종료합니다.")
+        sys.exit(0)
         
-    print("\n[현재 파일 목록]")
-    for i, file_name in enumerate(py_files, start=1):
-        print(f"{i}. {file_name}")
-        
-    while True:
-        try:
-            choice = int(input("\n분석할 파일 번호를 입력하세요: "))
-            if 1 <= choice <= len(py_files):
-                return py_files[choice - 1]
-            else:
-                print(f"1부터 {len(py_files)} 사이의 유효한 번호를 입력하세요.")
-        except ValueError:
-            print("숫자 형식으로 입력해주세요.")
+    return file_path
 
 def analyze_complexity(filepath):
     """2. AST 기반 시간 복잡도 추론 로직"""
