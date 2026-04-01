@@ -1,5 +1,18 @@
+# PyCharm settings
 .idea/
 
-venv/
+# Python cache
 __pycache__/
+*.py[cod]
 
+# Virtual environments
+venv/
+.venv/
+
+# macOS system files
+.DS_Store
+
+# Logs and temp files
+*.log
+tmp/
+.temp/

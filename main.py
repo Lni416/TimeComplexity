@@ -3,10 +3,24 @@ import ast
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-class LoopDepthVisitor(ast.NodeVisitor):
+class ComplexityVisitor(ast.NodeVisitor):
     def __init__(self):
         self.max_depth = 0
         self.current_depth = 0
+        self.has_recursion = False
+
+    def visit_FunctionDef(self, node):
+        func_name = node.name
+        
+        # 함수 바디 안에서 자기 자신을 호출(Call)하는지 검사
+        for child in ast.walk(node):
+            if isinstance(child, ast.Call) and isinstance(child.func, ast.Name):
+                if child.func.id == func_name:
+                    self.has_recursion = True
+                    break
+        
+        # 내부 구조(루프 등)도 계속 방문
+        self.generic_visit(node)
 
     def visit_For(self, node):
         self.current_depth += 1
@@ -26,38 +40,12 @@ class LoopDepthVisitor(ast.NodeVisitor):
         self.generic_visit(node)
         self.current_depth -= 1
 
-def create_gitignore():
-    """1. .gitignore 자동 생성"""
-    ignore_path = '.gitignore'
-    ignore_content = """# PyCharm settings
-.idea/
-
-# Python cache
-__pycache__/
-*.py[cod]
-
-# Virtual environments
-venv/
-.venv/
-
-# macOS system files
-.DS_Store
-
-# Logs and temp files
-*.log
-tmp/
-.temp/
-"""
-    if not os.path.exists(ignore_path):
-        with open(ignore_path, 'w', encoding='utf-8') as f:
-            f.write(ignore_content)
-        print("[환경 설정] .gitignore 파일을 자동으로 생성했습니다.")
 
 class ComplexityAnalyzerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("파이썬 시간 복잡도 분석기")
-        self.root.geometry("500x420")
+        self.root.geometry("500x440")
         self.root.configure(bg="#F8F9FA")
         self.root.resizable(False, False)
         
@@ -99,7 +87,7 @@ class ComplexityAnalyzerApp:
         self.result_frame.pack(fill=tk.X, pady=15)
         self.result_frame.pack_forget() # 처음엔 숨김
         
-        self.result_label = tk.Label(self.result_frame, text="", font=("Helvetica", 16, "bold"), bg="#E8F4F8", fg="#055160", justify="center")
+        self.result_label = tk.Label(self.result_frame, text="", font=("Helvetica", 14, "bold"), bg="#E8F4F8", fg="#055160", justify="center")
         self.result_label.pack(pady=15)
         
     def select_file(self):
@@ -135,24 +123,27 @@ class ComplexityAnalyzerApp:
             messagebox.showerror("구문 오류", f"선택한 파일에 파이썬 문법 오류(Syntax Error)가 있습니다:\n{e}")
             return
 
-        visitor = LoopDepthVisitor()
+        visitor = ComplexityVisitor()
         visitor.visit(tree)
         
         depth = visitor.max_depth
-        if depth == 0:
+        has_recursion = visitor.has_recursion
+        
+        # 복잡도 판별 로직 추가
+        if has_recursion:
+            complexity = "O(2^n) (재귀 호출)"
+        elif depth == 0:
             complexity = "O(1)"
         elif depth == 1:
             complexity = "O(n)"
         else:
             complexity = f"O(n^{depth})"
             
-        result_text = f"루프 중첩 깊이: {depth}\n시간 복잡도: {complexity}"
+        result_text = f"루프 중첩 깊이: {depth}\n재귀 스택 감지: {'예' if has_recursion else '아니오'}\n\n⏱ 분석된 복잡도: {complexity}"
         self.result_label.config(text=result_text)
         self.result_frame.pack(fill=tk.X, pady=15)
 
 if __name__ == "__main__":
-    create_gitignore()
-    
     # GUI 앱 실행
     root = tk.Tk()
     app = ComplexityAnalyzerApp(root)
