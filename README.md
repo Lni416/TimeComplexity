@@ -11,4 +11,4 @@
 
 ## 실행 방법
 1. `pip install gitpython`
-2. `python main.py` 실행 후 파일 번호 선택.
+2. `python main.py` 실행 후 파일 선택.
