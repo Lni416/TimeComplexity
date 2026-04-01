@@ -1,9 +1,7 @@
 import os
 import ast
-import sys
 import tkinter as tk
-from tkinter import filedialog
-
+from tkinter import filedialog, messagebox
 
 class LoopDepthVisitor(ast.NodeVisitor):
     def __init__(self):
@@ -54,68 +52,86 @@ tmp/
         with open(ignore_path, 'w', encoding='utf-8') as f:
             f.write(ignore_content)
         print("[환경 설정] .gitignore 파일을 자동으로 생성했습니다.")
-    else:
-        print("[환경 설정] .gitignore 파일이 이미 존재합니다.")
 
-
-def select_python_file():
-    """2. GUI로 파이썬 파일 선택"""
-    print("[안내] GUI 창에서 분석할 파이썬(.py) 파일을 선택해주세요...")
-    root = tk.Tk()
-    root.withdraw() # 메인 윈도우 숨기기
-    
-    # macOS에서 창이 배경으로 숨는 현상 방지
-    root.call('wm', 'attributes', '.', '-topmost', True)
-    
-    file_path = filedialog.askopenfilename(
-        title="분석할 파이썬 파일 선택",
-        filetypes=[("Python Files", "*.py"), ("All Files", "*.*")],
-        initialdir=os.getcwd()
-    )
-    
-    if not file_path:
-        print("[취소] 파일 선택이 취소되어 프로그램을 종료합니다.")
-        sys.exit(0)
+class ComplexityAnalyzerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("파이썬 시간 복잡도 분석기")
+        self.root.geometry("450x350")
         
-    return file_path
+        # macOS 창 띄움 안정화: 초기 실행 시 최상단 고정 후 해제
+        self.root.call('wm', 'attributes', '.', '-topmost', True)
+        self.root.after(500, lambda: self.root.call('wm', 'attributes', '.', '-topmost', False))
 
-def analyze_complexity(filepath):
-    """2. AST 기반 시간 복잡도 추론 로직"""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            source = f.read()
-    except Exception as e:
-        print(f"[오류] 파일 읽기 실패: {e}")
-        return
+        self.selected_file_path = None
+        
+        # UI 구성요소
+        self.title_label = tk.Label(root, text="정적 분석 기반 시간 복잡도 측정", font=("Helvetica", 16, "bold"))
+        self.title_label.pack(pady=20)
+        
+        self.select_btn = tk.Button(root, text="파이썬 파일(.py) 선택", command=self.select_file, width=20, height=2)
+        self.select_btn.pack(pady=10)
+        
+        self.file_label = tk.Label(root, text="선택된 파일: 없음", fg="gray", font=("Helvetica", 12))
+        self.file_label.pack(pady=5)
+        
+        self.analyze_btn = tk.Button(root, text="분석하기", command=self.analyze_complexity, width=20, height=2, state=tk.DISABLED)
+        self.analyze_btn.pack(pady=10)
+        
+        self.result_label = tk.Label(root, text="", font=("Helvetica", 14), fg="blue")
+        self.result_label.pack(pady=20)
+        
+    def select_file(self):
+        file_path = filedialog.askopenfilename(
+            title="분석할 파이썬 파일 선택",
+            filetypes=[("Python Files", "*.py"), ("All Files", "*.*")],
+            initialdir=os.getcwd()
+        )
+        
+        if file_path:
+            self.selected_file_path = file_path
+            short_name = os.path.basename(file_path)
+            self.file_label.config(text=f"선택된 파일: {short_name}", fg="black")
+            
+            # 파일이 선택되면 분석 버튼 활성화
+            self.analyze_btn.config(state=tk.NORMAL)
+            self.result_label.config(text="") # 이전 결과 초기화
+            
+    def analyze_complexity(self):
+        if not self.selected_file_path:
+            return
+            
+        try:
+            with open(self.selected_file_path, 'r', encoding='utf-8') as f:
+                source = f.read()
+        except Exception as e:
+            messagebox.showerror("오류", f"파일을 읽는 도중 오류가 발생했습니다:\n{e}")
+            return
 
-    try:
-        tree = ast.parse(source)
-    except SyntaxError as e:
-        print(f"[오류] 파이썬 문법 오류로 파싱 불가능: {e}")
-        return
+        try:
+            tree = ast.parse(source)
+        except SyntaxError as e:
+            messagebox.showerror("구문 오류", f"선택한 파일에 파이썬 문법 오류(Syntax Error)가 있습니다:\n{e}")
+            return
 
-    visitor = LoopDepthVisitor()
-    visitor.visit(tree)
-    
-    depth = visitor.max_depth
-    if depth == 0:
-        complexity = "O(1)"
-    elif depth == 1:
-        complexity = "O(n)"
-    else:
-        complexity = f"O(n^{depth})"
-
-    print("\n====== 시간 복잡도 분석 결과 ======")
-    print(f"📄 파일명: {filepath}")
-    print(f"🔄 최대 루프 중첩 깊이: {depth}")
-    print(f"⏱ 추론된 복잡도: {complexity}")
-    print("===================================\n")
+        visitor = LoopDepthVisitor()
+        visitor.visit(tree)
+        
+        depth = visitor.max_depth
+        if depth == 0:
+            complexity = "O(1)"
+        elif depth == 1:
+            complexity = "O(n)"
+        else:
+            complexity = f"O(n^{depth})"
+            
+        result_text = f"🔄 최대 루프 중첩 깊이: {depth}\n⏱ 시간 복잡도: {complexity}"
+        self.result_label.config(text=result_text)
 
 if __name__ == "__main__":
-    print(">>> 시스템 점검 시작")
     create_gitignore()
-
     
-    print("\n>>> 정적 코드 분석기 실행")
-    target_file = select_python_file()
-    analyze_complexity(target_file)
+    # GUI 앱 실행
+    root = tk.Tk()
+    app = ComplexityAnalyzerApp(root)
+    root.mainloop()
