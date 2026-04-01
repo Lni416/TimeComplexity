@@ -2,10 +2,6 @@ import os
 import ast
 import sys
 
-try:
-    import git
-except ImportError:
-    git = None
 
 class LoopDepthVisitor(ast.NodeVisitor):
     def __init__(self):
@@ -59,45 +55,6 @@ tmp/
     else:
         print("[환경 설정] .gitignore 파일이 이미 존재합니다.")
 
-def sync_with_git():
-    """3. Git 자동화 (.py 및 .gitignore 파일만 커밋/푸시)"""
-    if git is None:
-        print("[Git 자동화] GitPython 모듈이 설치되지 않아 동기화를 건너뜁니다. (설치 요망: pip install gitpython)")
-        return
-
-    try:
-        repo = git.Repo(os.getcwd())
-    except git.exc.InvalidGitRepositoryError:
-        print("[Git 자동화] 현재 디렉토리가 Git 저장소가 아닙니다. (git init 필요)")
-        return
-
-    try:
-        # 변경된 파일 목록 조회 (untracked + modified)
-        changed = [item.a_path for item in repo.index.diff(None)] + repo.untracked_files
-        
-        staged = [item.a_path for item in repo.index.diff("HEAD")] if repo.head.is_valid() else []
-        all_changed = set(changed + staged)
-        
-        # 소스 코드(.py)와 .gitignore 파일만 필터링 (결과 로그 등 제외)
-        files_to_commit = [f for f in all_changed if f.endswith('.py') or f == '.gitignore']
-        
-        if not files_to_commit:
-            print("[Git 자동화] 변경된 소스 코드나 설정 파일이 없어 동기화를 생략합니다.")
-            return
-            
-        for file in files_to_commit:
-            repo.git.add(file)
-            
-        repo.index.commit("feat: update analyzer logic and sync source code")
-        print(f"[Git 자동화] 변경사항 커밋 완료: {', '.join(files_to_commit)}")
-        
-        origin = repo.remote(name='origin')
-        origin.push()
-        print("[Git 자동화] GitHub로 소스 코드를 성공적으로 푸시했습니다.")
-    except ValueError:
-        print("[Git 자동화] 리모트 서버(origin)가 설정되지 않아 푸시를 건너뜁니다.")
-    except Exception as e:
-        print(f"[Git 자동화] Git 작업 중 오류 발생: {e}")
 
 def select_python_file():
     """2. 파이썬 파일 선택"""
@@ -155,7 +112,7 @@ def analyze_complexity(filepath):
 if __name__ == "__main__":
     print(">>> 시스템 점검 시작")
     create_gitignore()
-    sync_with_git()
+
     
     print("\n>>> 정적 코드 분석기 실행")
     target_file = select_python_file()
