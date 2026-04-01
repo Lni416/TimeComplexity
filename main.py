@@ -8,8 +8,9 @@ class ComplexityAnalyzerApp:
         self.root = root
         self.root.title("파이썬 시간 복잡도 분석기")
         self.root.geometry("500x440")
+        self.root.minsize(450, 400) # 창이 너무 작게 줄어드는 것 방지
         self.root.configure(bg="#F8F9FA")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
         
         # macOS 창 띄움 안정화
         self.root.call('wm', 'attributes', '.', '-topmost', True)
