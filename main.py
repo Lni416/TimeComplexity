@@ -6,9 +6,9 @@ from analyzer import analyze_code
 class ComplexityAnalyzerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("파이썬 시간 복잡도 분석기")
-        self.root.geometry("500x440")
-        self.root.minsize(450, 400) # 창이 너무 작게 줄어드는 것 방지
+        self.root.title("지능형 정적 분석 기반 시간 복잡도 분석기 v2.0")
+        self.root.geometry("600x520")
+        self.root.minsize(550, 480)
         self.root.configure(bg="#F8F9FA")
         self.root.resizable(True, True)
         
@@ -28,7 +28,7 @@ class ComplexityAnalyzerApp:
         container.pack(fill=tk.BOTH, expand=True, padx=30, pady=25)
         
         # 제목
-        self.title_label = tk.Label(container, text="정적 분석 기반\n시간 복잡도 측정", font=("Helvetica", 20, "bold"), bg="#F8F9FA", fg="#212529", justify="center")
+        self.title_label = tk.Label(container, text="지능형 정적 기반\n시간 복잡도 분석기 v2.0", font=("Helvetica", 20, "bold"), bg="#F8F9FA", fg="#212529", justify="center")
         self.title_label.pack(pady=(0, 20))
         
         # 카드 프레임 (파일 선택 영역)
@@ -42,7 +42,7 @@ class ComplexityAnalyzerApp:
         self.select_btn = ttk.Button(container, text="📂 파이썬 파일(.py) 찾기", command=self.select_file)
         self.select_btn.pack(fill=tk.X, pady=(10, 5))
         
-        self.analyze_btn = ttk.Button(container, text="🧠 분석 시작", command=self.analyze_complexity, state=tk.DISABLED)
+        self.analyze_btn = ttk.Button(container, text="🧠 고급 분석 시작", command=self.analyze_complexity, state=tk.DISABLED)
         self.analyze_btn.pack(fill=tk.X, pady=5)
         
         # 결과 표시 프레임
@@ -50,8 +50,12 @@ class ComplexityAnalyzerApp:
         self.result_frame.pack(fill=tk.X, pady=15)
         self.result_frame.pack_forget() # 처음엔 숨김
         
-        self.result_label = tk.Label(self.result_frame, text="", font=("Helvetica", 14, "bold"), bg="#E8F4F8", fg="#055160", justify="center")
-        self.result_label.pack(pady=15)
+        self.result_label = tk.Label(self.result_frame, text="", font=("Helvetica", 18, "bold"), bg="#E8F4F8", fg="#055160", justify="center")
+        self.result_label.pack(pady=(15, 5))
+        
+        # 판단 근거 표시 영역
+        self.reason_label = tk.Label(self.result_frame, text="", font=("Helvetica", 13), bg="#E8F4F8", fg="#495057", justify="left")
+        self.reason_label.pack(pady=(5, 15), padx=20)
         
     def select_file(self):
         file_path = filedialog.askopenfilename(
@@ -82,16 +86,19 @@ class ComplexityAnalyzerApp:
             messagebox.showerror(title, result["error"])
             return
             
-        depth = result.get("depth", 0)
-        has_recursion = result.get("has_recursion", False)
         complexity = result.get("complexity", "O(1)")
+        reasons = result.get("reasons", ["판단 근거 없음"])
             
-        result_text = f"루프 중첩 깊이: {depth}\n재귀 스택 감지: {'예' if has_recursion else '아니오'}\n\n⏱ 분석된 복잡도: {complexity}"
-        self.result_label.config(text=result_text)
+        self.result_label.config(text=f"⏱ 최종 판별 결과: {complexity}")
+        
+        reason_text = "✅ [판단 근거]\n" + "\n".join(f"- {r}" for r in reasons)
+        self.reason_label.config(text=reason_text)
+        
         self.result_frame.pack(fill=tk.X, pady=15)
 
 if __name__ == "__main__":
     # GUI 앱 실행
     root = tk.Tk()
+    root.eval('tk::PlaceWindow . center')
     app = ComplexityAnalyzerApp(root)
     root.mainloop()
