@@ -87,12 +87,25 @@ class ComplexityAnalyzerApp:
             return
             
         complexity = result.get("complexity", "O(1)")
-        reasons = result.get("reasons", ["판단 근거 없음"])
+        reasons = result.get("reasons", [])
             
         self.result_label.config(text=f"⏱ 최종 판별 결과: {complexity}")
         
-        reason_text = "✅ [판단 근거]\n" + "\n".join(f"- {r}" for r in reasons)
-        self.reason_label.config(text=reason_text)
+        has_recursion = any("재귀" in r for r in reasons)
+        
+        reason_text = "✅ [주요 감지 요인]\n"
+        reason_text += f"🔄 재귀 호출: {'감지됨 (O(2^n) 위험)' if has_recursion else '없음'}\n\n"
+        reason_text += "🔍 [상세 내역]\n"
+        
+        if not reasons:
+            reason_text += "- 결정적 감지 요인 없음"
+        else:
+            for idx, r in enumerate(reasons[:7]): # Limit to 7 reasons to prevent UI overflow
+                reason_text += f"▪ {r}\n"
+            if len(reasons) > 7:
+                reason_text += f"  ... 외 {len(reasons)-7}건"
+
+        self.reason_label.config(text=reason_text, justify="left", font=("Helvetica", 11))
         
         self.result_frame.pack(fill=tk.X, pady=15)
 

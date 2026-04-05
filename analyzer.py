@@ -1,64 +1,208 @@
 import ast
 
-class ComplexityVisitor(ast.NodeVisitor):
-    def __init__(self):
-        self.max_depth = 0
-        self.current_depth = 0
-        self.func_recur_info = {} # func_name -> {'count': 0, 'halves': False}
-        self.has_log_n_loop = False
-        self.has_n_log_n_sort = False
+class Complexity:
+    def __init__(self, n_power=0, has_log=False, is_exp=False):
+        self.n_power = n_power
+        self.has_log = has_log
+        self.is_exp = is_exp
+
+    def __repr__(self):
+        if self.is_exp:
+            return "O(2^n)"
+        if self.n_power == 0:
+            return "O(log n)" if self.has_log else "O(1)"
+        
+        n_str = "n" if self.n_power == 1 else f"n^{self.n_power}"
+        log_str = " log n" if self.has_log else ""
+        return f"O({n_str}{log_str})"
+
+    def __str__(self):
+        return repr(self)
+
+    def copy(self):
+        return Complexity(self.n_power, self.has_log, self.is_exp)
+
+    def __lt__(self, other):
+        return (self.is_exp, self.n_power, self.has_log) < (other.is_exp, other.n_power, other.has_log)
+    
+    def __eq__(self, other):
+        return (self.is_exp, self.n_power, self.has_log) == (other.is_exp, other.n_power, other.has_log)
+
+    def __mul__(self, other):
+        return Complexity(self.n_power + other.n_power, self.has_log or other.has_log, self.is_exp or other.is_exp)
+
+O_1_METHODS = {'append', 'pop', 'add', 'discard', 'get', 'keys', 'values', 'items'}
+O_1_FUNCS = {'len'}
+
+O_N_METHODS = {'index', 'insert', 'remove', 'copy', 'clear', 'count', 'replace', 'split', 'join', 'find', 'startswith', 'endswith'}
+O_N_FUNCS = {'min', 'max', 'sum'}
+
+O_N_LOG_N_METHODS = {'sort'}
+O_N_LOG_N_FUNCS = {'sorted'}
+
+def analyze_node(node, func_complexities, current_func_name):
+    reasons = []
+    
+    if isinstance(node, list):
+        max_comp = Complexity()
+        for n in node:
+            c, r = analyze_node(n, func_complexities, current_func_name)
+            max_comp = max(max_comp, c)
+            for reason in r:
+                if reason not in reasons:
+                    reasons.append(reason)
+        return max_comp, reasons
+        
+    comp = Complexity()
+    
+    if isinstance(node, (ast.For, ast.While, ast.AsyncFor, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+        inner_comp = Complexity()
+        if hasattr(node, 'body'):
+            inner_comp, inner_reasons = analyze_node(node.body, func_complexities, current_func_name)
+            for r in inner_reasons:
+                if r not in reasons:
+                    reasons.append(r)
+        
+        loop_multiplier = Complexity(n_power=1)
+        comp = max(comp, inner_comp * loop_multiplier)
+        reasons.append("루프(For/While/Comprehension) 계층 감지 -> 이전 차수에 O(n) 반복 곱셈")
+        
+    elif isinstance(node, ast.Call):
+        func = node.func
+        called_name = None
+        if isinstance(func, ast.Name):
+            called_name = func.id
+        elif isinstance(func, ast.Attribute):
+            called_name = func.attr
+            
+        if called_name in O_N_FUNCS or called_name in O_N_METHODS:
+            comp = max(comp, Complexity(n_power=1))
+            reasons.append(f"'{called_name}()' 내장 함수/메소드 사용 (O(n))")
+        elif called_name in O_N_LOG_N_FUNCS or called_name in O_N_LOG_N_METHODS:
+            comp = max(comp, Complexity(n_power=1, has_log=True))
+            reasons.append(f"'{called_name}()' 정렬 내장 함수/메소드 사용 (O(n log n))")
+        elif called_name in O_1_FUNCS or called_name in O_1_METHODS:
+            comp = max(comp, Complexity())
+            reasons.append(f"'{called_name}()' 내장 함수/메소드 사용 (O(1))")
+        elif called_name == current_func_name and current_func_name is not None:
+             comp = max(comp, Complexity(is_exp=True))
+             reasons.append(f"자기 자신('{current_func_name}')의 재귀 호출 감지 -> 재귀 호출(O(2^n) 가정)")
+        elif called_name in func_complexities:
+             target_comp = func_complexities[called_name]
+             comp = max(comp, target_comp)
+             reasons.append(f"다른 커스텀 함수 '{called_name}()' 호출 (결과: {target_comp}) 감지되어 합산")
+             
+        for arg in node.args:
+            c, r = analyze_node(arg, func_complexities, current_func_name)
+            comp = max(comp, c)
+            for reason in r:
+                if reason not in reasons:
+                    reasons.append(reason)
+                    
+    elif isinstance(node, ast.Compare):
+        if any(isinstance(op, ast.In) for op in node.ops):
+            comp = max(comp, Complexity(n_power=1))
+            reasons.append("'in' 연산자(탐색) 사용 (리스트 탐색 가정 O(n))")
+            
+    for child in ast.iter_child_nodes(node):
+        # We handled body/args already above manually, but iter_child_nodes will walk them again.
+        # However, to avoid double-counting loops, we should skip 'body' or we just handle things differently.
+        # But wait - iter_child_nodes yields all children (including body, if it exists).
+        # Since we just 'max' the complexities, going over them multiple times is okay EXCEPT for loops!
+        # Because we explicitly multiply loop bodies!
+        pass
+        
+    # To fix the above issue, we explicitly walk the AST smartly.
+    # Instead of iter_child_nodes, let's just do standard ast.walk but without multiplying. Wait, we return `comp`.
+    # Let's write a proper visitor class for each pass instead of a recursive function that double counts.
+
+    return comp, reasons
+
+class ScopeAnalyzer(ast.NodeVisitor):
+    def __init__(self, func_complexities, current_func_name):
+        self.func_complexities = func_complexities
+        self.current_func_name = current_func_name
         self.reasons = []
+        self.comp = Complexity()
 
-    def visit_FunctionDef(self, node):
-        func_name = node.name
-        self.func_recur_info[func_name] = {'count': 0, 'halves': False}
+    def add_reason(self, reason):
+        if reason not in self.reasons:
+            self.reasons.append(reason)
 
-        for child in ast.walk(node):
-            if isinstance(child, ast.Call):
-                if isinstance(child.func, ast.Name) and child.func.id == 'sorted':
-                    self.has_n_log_n_sort = True
-                    if "정렬 함수(sorted()) 사용" not in self.reasons:
-                        self.reasons.append("정렬 함수(sorted()) 사용")
-                elif isinstance(child.func, ast.Attribute) and child.func.attr == 'sort':
-                    self.has_n_log_n_sort = True
-                    if "정렬 함수(.sort()) 사용" not in self.reasons:
-                        self.reasons.append("정렬 함수(.sort()) 사용")
-
-                if isinstance(child.func, ast.Name) and child.func.id == func_name:
-                    self.func_recur_info[func_name]['count'] += 1
-                    for arg in child.args:
-                        if isinstance(arg, ast.BinOp) and isinstance(arg.op, (ast.Div, ast.FloorDiv)):
-                            if isinstance(arg.right, ast.Constant) and arg.right.value == 2:
-                                self.func_recur_info[func_name]['halves'] = True
-                        elif isinstance(arg, ast.Constant) and isinstance(arg.value, int):
-                            pass
-
-            elif isinstance(child, ast.AugAssign):
-                if isinstance(child.op, (ast.Mult, ast.Div, ast.FloorDiv)):
-                    if isinstance(child.value, ast.Constant) and child.value.value == 2:
-                        self.has_log_n_loop = True
-                        if "루프 변수의 기하급수적 증감(i *= 2 등) 감지" not in self.reasons:
-                            self.reasons.append("루프 변수의 기하급수적 증감(i *= 2 등) 감지")
-                            
-        self.generic_visit(node)
+    def visit_sequence(self, visitor, seq):
+        if not seq: return
+        for st in seq:
+            visitor.visit(st)
 
     def visit_For(self, node):
-        self.current_depth += 1
-        self.max_depth = max(self.max_depth, self.current_depth)
-        self.generic_visit(node)
-        self.current_depth -= 1
-
-    def visit_While(self, node):
-        self.current_depth += 1
-        self.max_depth = max(self.max_depth, self.current_depth)
-        self.generic_visit(node)
-        self.current_depth -= 1
+        inner_visitor = ScopeAnalyzer(self.func_complexities, self.current_func_name)
+        self.visit_sequence(inner_visitor, node.body)
         
-    def visit_AsyncFor(self, node):
-        self.current_depth += 1
-        self.max_depth = max(self.max_depth, self.current_depth)
+        loop_multiplier = Complexity(n_power=1)
+        self.comp = max(self.comp, inner_visitor.comp * loop_multiplier)
+        self.add_reason("루프(For/While/Comprehension) 선형 계층 감지 -> 내용물에 O(n) 곱셈")
+        for r in inner_visitor.reasons:
+            self.add_reason(r)
+        
+        self.visit_sequence(inner_visitor, node.orelse)
+
+
+    visit_While = visit_For
+    visit_AsyncFor = visit_For
+
+    # Comprehensions don't have .body, they have .elt and .generators.
+    def visit_ListComp(self, node):
+        inner_visitor = ScopeAnalyzer(self.func_complexities, self.current_func_name)
+        inner_visitor.visit(node.elt)
+        
+        # Each generator adds an O(n)
+        for gen in node.generators:
+            self.comp = max(self.comp, inner_visitor.comp * Complexity(n_power=1))
+            self.add_reason("Comprehension 계층 감지 -> 단일 O(n) 곱셈")
+            inner_visitor.visit(gen.iter)
+            inner_visitor.visit(gen.ifs)
+            
+        for r in inner_visitor.reasons:
+            self.add_reason(r)
+
+    visit_SetComp = visit_ListComp
+    visit_DictComp = visit_ListComp
+    visit_GeneratorExp = visit_ListComp
+
+    def visit_Call(self, node):
+        func = node.func
+        called_name = None
+        if isinstance(func, ast.Name):
+            called_name = func.id
+        elif isinstance(func, ast.Attribute):
+            called_name = func.attr
+            
+        if called_name in O_N_FUNCS or called_name in O_N_METHODS:
+            self.comp = max(self.comp, Complexity(n_power=1))
+            self.add_reason(f"'{called_name}()' 내장 함수/메소드 사용 (O(n))")
+        elif called_name in O_N_LOG_N_FUNCS or called_name in O_N_LOG_N_METHODS:
+            self.comp = max(self.comp, Complexity(n_power=1, has_log=True))
+            self.add_reason(f"'{called_name}()' 정렬 내장 함수/메소드 사용 (O(n log n))")
+        elif called_name in O_1_FUNCS or called_name in O_1_METHODS:
+            self.comp = max(self.comp, Complexity())
+            self.add_reason(f"'{called_name}()' 내장 함수/메소드 사용 (O(1))")
+        elif called_name == self.current_func_name and self.current_func_name is not None:
+             self.comp = max(self.comp, Complexity(is_exp=True))
+             self.add_reason(f"자기 자신('{self.current_func_name}')의 재귀 호출 감지 -> 재귀(최악의 경우 O(2^n) 가정)")
+        elif called_name in self.func_complexities:
+             target_comp = self.func_complexities[called_name]
+             self.comp = max(self.comp, target_comp)
+             self.add_reason(f"파일 내 커스텀 함수 '{called_name}()' 호출 (목표: {target_comp})")
+             
         self.generic_visit(node)
-        self.current_depth -= 1
+
+    def visit_Compare(self, node):
+        if any(isinstance(op, ast.In) for op in node.ops):
+             self.comp = max(self.comp, Complexity(n_power=1))
+             self.add_reason("'in' 연산자(탐색) 사용 (리스트 탐색 가정 O(n))")
+             
+        self.generic_visit(node)
+
 
 def analyze_code(filepath):
     try:
@@ -72,57 +216,50 @@ def analyze_code(filepath):
     except SyntaxError as e:
         return {"error": f"선택한 파일에 파이썬 문법 오류(Syntax Error)가 있습니다:\n{e}", "type": "SyntaxError"}
 
-    visitor = ComplexityVisitor()
-    visitor.visit(tree)
+    functions = {}
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            functions[node.name] = node
+
+    func_complexities = {name: Complexity() for name in functions}
+    func_reasons = {name: [] for name in functions}
     
-    reasons = visitor.reasons.copy()
-    depth = visitor.max_depth
-    
-    is_exp = False
-    for info in visitor.func_recur_info.values():
-        if info['count'] >= 2 and not info['halves']:
-            is_exp = True
-            if "동일 함수 2번 이상 재귀 호출 (O(2^n) 패턴)" not in reasons:
-                reasons.append("동일 함수 2번 이상 재귀 호출 (O(2^n) 패턴)")
+    for _ in range(3):
+        updated = False
+        for name, node in functions.items():
+            analyzer = ScopeAnalyzer(func_complexities, name)
+            # Visit body contents directly to prevent generic_visit from double processing if we redefined things
+            for n in node.body:
+                analyzer.visit(n)
+                
+            if analyzer.comp > func_complexities[name]:
+                func_complexities[name] = analyzer.comp
+                func_reasons[name] = analyzer.reasons
+                updated = True
+        if not updated:
             break
+            
+    final_analyzer = ScopeAnalyzer(func_complexities, None)
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            final_analyzer.visit(node)
+            
+    final_comp = final_analyzer.comp
+    final_reasons = final_analyzer.reasons
+    
+    if final_comp == Complexity() and functions:
+        max_func_comp = Complexity()
+        for name, comp in func_complexities.items():
+             max_func_comp = max(max_func_comp, comp)
+             for r in func_reasons[name]:
+                 if r not in final_reasons:
+                     final_reasons.append(f"[{name}] " + r)
+        final_comp = max_func_comp
 
-    is_n_log_n = visitor.has_n_log_n_sort
-    for info in visitor.func_recur_info.values():
-        if info['count'] >= 2 and info['halves']:
-            is_n_log_n = True
-            if "데이터가 절반으로 나뉘는 분할 정복 형태 (O(n log n) 패턴)" not in reasons:
-                reasons.append("데이터가 절반으로 나뉘는 분할 정복 형태 (O(n log n) 패턴)")
-
-    is_log_n = visitor.has_log_n_loop
-    for info in visitor.func_recur_info.values():
-        if info['count'] == 1 and info['halves']:
-            is_log_n = True
-            if "이진 탐색 형태의 단일 재귀 호출 (O(log n) 패턴)" not in reasons:
-                reasons.append("이진 탐색 형태의 단일 재귀 호출 (O(log n) 패턴)")
-
-    # 최종 복잡도 판단 (내림차순)
-    if is_exp:
-        complexity = "O(2^n)"
-    elif depth >= 2:
-        complexity = f"O(n^{depth})"
-        reasons.append(f"{depth}중 루프 감지")
-    elif is_n_log_n:
-        complexity = "O(n log n)"
-    elif depth == 1:
-        complexity = "O(n)"
-        reasons.append("단일 루프 감지")
-    elif is_log_n:
-        complexity = "O(log n)"
-    else:
-        # 단일 호출이고 데이터를 반으로 쪼개지 않는다면 O(n) 취급
-        if any((info['count'] >= 1 and not info['halves']) for info in visitor.func_recur_info.values()):
-            complexity = "O(n)"
-            reasons.append("단일 선형 재귀 호출 감지")
-        else:
-            complexity = "O(1)"
-            reasons.append("지연 로직 없이 단순 상수 시간 연산")
+    if final_comp == Complexity() and not final_reasons:
+        final_reasons.append("단순 상수 시간 O(1) 구조 (루프, 정렬, 무거운 내장함수 없음)")
 
     return {
-        "complexity": complexity,
-        "reasons": reasons
+        "complexity": str(final_comp),
+        "reasons": final_reasons
     }
